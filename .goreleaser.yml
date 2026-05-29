@@ -1,0 +1,83 @@
+version: 2
+
+project_name: azure-alerts-proxy
+
+before:
+  hooks:
+    - go mod tidy
+
+builds:
+  - id: function-windows
+    main: .
+    binary: handler
+    env:
+      - CGO_ENABLED=0
+    goos:
+      - windows
+    goarch:
+      - amd64
+    flags:
+      - -trimpath
+    ldflags:
+      - -s -w
+
+  - id: container-linux
+    main: .
+    binary: azure-alerts-proxy
+    env:
+      - CGO_ENABLED=0
+    goos:
+      - linux
+    goarch:
+      - amd64
+      - arm64
+    flags:
+      - -trimpath
+    ldflags:
+      - -s -w
+
+archives:
+  - id: azure-functions-package
+    ids:
+      - function-windows
+    formats:
+      - zip
+    name_template: package
+    wrap_in_directory: false
+    strip_binary_directory: true
+    files:
+      - host.json
+      - alerts/*
+      - cleanup/*
+
+dockers_v2:
+  - id: image
+    ids:
+      - container-linux
+    dockerfile: Dockerfile
+    images:
+      - "ghcr.io/bonddim/{{ .ProjectName }}"
+    tags:
+      - "v{{ .Version }}"
+      - "{{ if not .Prerelease }}latest{{ end }}"
+    platforms:
+      - linux/amd64
+      - linux/arm64
+    labels:
+      "org.opencontainers.image.title": "{{ .ProjectName }}"
+      "org.opencontainers.image.description": "Azure Monitor Alerts Proxy"
+      "org.opencontainers.image.source": "{{ .GitURL }}"
+      "org.opencontainers.image.revision": "{{ .FullCommit }}"
+      "org.opencontainers.image.version": "{{ .Version }}"
+      "org.opencontainers.image.created": "{{ .Date }}"
+      "org.opencontainers.image.base.name": "{{ .BaseImage }}"
+      "org.opencontainers.image.base.digest": "{{ .BaseImageDigest }}"
+
+checksum:
+  name_template: checksums.txt
+
+snapshot:
+  version_template: "{{ incpatch .Version }}-snapshot"
+
+changelog:
+  use: github
