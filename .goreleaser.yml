@@ -1,9 +1,11 @@
 version: 2
 
 project_name: azure-alerts-proxy
+
 before:
   hooks:
     - go mod tidy
+
 builds:
   - id: function-windows
     main: .
@@ -57,7 +59,6 @@ dockers_v2:
       - "ghcr.io/bonddim/{{ .ProjectName }}"
     tags:
       - "v{{ .Version }}"
-      - "{{ .Tag }}"
       - "{{ if not .Prerelease }}latest{{ end }}"
     platforms:
       - linux/amd64
