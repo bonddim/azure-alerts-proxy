@@ -1,0 +1,25 @@
+# Slack app manifest for the Azure Monitor → Slack bot.
+# Create an app from this manifest at https://api.slack.com/apps → "Create New App" → "From a manifest".
+# After creation: Install to Workspace, then copy the "Bot User OAuth Token" (xoxb-...).
+display_information:
+  name: Azure Monitor Alerts
+  description: Posts Azure Monitor alerts to Slack and updates them on resolution.
+  background_color: "##1E1B80"
+
+features:
+  bot_user:
+    display_name: azure-monitor
+    always_online: true
+
+oauth_config:
+  scopes:
+    bot:
+      # Post and update messages.
+      - chat:write
+      # Allow posting to public channels the bot has not been invited to.
+      - chat:write.public
+
+settings:
+  org_deploy_enabled: false
+  socket_mode_enabled: false
+  token_rotation_enabled: false

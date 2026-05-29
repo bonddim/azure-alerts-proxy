@@ -1,0 +1,5 @@
+*
+!alerts/
+!cleanup
+!handler.exe
+!host.json

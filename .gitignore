@@ -28,5 +28,13 @@ go.work.sum
 .env
 
 # Editor/IDE
-# .idea/
-# .vscode/
+.idea/
+.vscode/
+
+# Build artifacts
+dist/
+package.zip
+/handler
+
+# Azure Functions
+local.settings.json
