@@ -218,7 +218,8 @@ func Build(m alert.Model) Message {
 	}
 	if m.Resolved() && m.ResolvedDateTime != "" {
 		ctx = append(ctx, "*Resolved:* "+formatAlertTime(m.ResolvedDateTime))
-	} else if m.FiredDateTime != "" {
+	}
+	if m.FiredDateTime != "" {
 		ctx = append(ctx, "*Fired:* "+formatAlertTime(m.FiredDateTime))
 	}
 	blocks = append(blocks, slack.NewContextBlock("", mrkdwn(strings.Join(ctx, "  |  "))))
