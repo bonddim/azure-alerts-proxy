@@ -38,7 +38,7 @@ func colorFor(m alert.Model) string {
 	case 2:
 		return "#d39420"
 	case 3:
-		return "#4263c0"
+		return "#818be7"
 	default:
 		return "#868686"
 	}
