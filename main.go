@@ -39,6 +39,7 @@ func main() {
 
 	deps := handler.Deps{
 		DefaultChannel: cfg.SlackDefaultChannel,
+		ChannelRoutes:  cfg.SlackChannelRoutes,
 		Logf:           log.Printf,
 		Notifier:       notifier,
 		PortalBase:     cfg.PortalBase,

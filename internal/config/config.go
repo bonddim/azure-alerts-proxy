@@ -2,15 +2,24 @@
 package config
 
 import (
+	"encoding/json"
 	"fmt"
 	"os"
 	"strconv"
 )
 
+// ChannelRoute maps matching alerts to a Slack channel.
+type ChannelRoute struct {
+	Service string            `json:"service"`
+	Labels  map[string]string `json:"labels"`
+	Channel string            `json:"channel"`
+}
+
 // Config is the validated application configuration.
 type Config struct {
 	SlackBotToken                string
 	SlackDefaultChannel          string
+	SlackChannelRoutes           []ChannelRoute
 	StateTableName               string
 	StateStorageEndpoint         string
 	StateStorageConnectionString string
@@ -35,6 +44,16 @@ func Load() (Config, error) {
 	}
 	if c.SlackDefaultChannel == "" {
 		return c, fmt.Errorf("missing required app setting: SLACK_DEFAULT_CHANNEL")
+	}
+	if v := os.Getenv("SLACK_CHANNEL_ROUTES"); v != "" {
+		if err := json.Unmarshal([]byte(v), &c.SlackChannelRoutes); err != nil {
+			return c, fmt.Errorf("invalid SLACK_CHANNEL_ROUTES: %w", err)
+		}
+		for i, route := range c.SlackChannelRoutes {
+			if route.Channel == "" {
+				return c, fmt.Errorf("invalid SLACK_CHANNEL_ROUTES[%d]: missing channel", i)
+			}
+		}
 	}
 	// Local dev: fall back to the Functions storage account for the state table.
 	if c.StateStorageEndpoint == "" && c.StateStorageConnectionString == "" {

@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/bonddim/azure-alerts-proxy/internal/alert"
+	"github.com/bonddim/azure-alerts-proxy/internal/config"
 	"github.com/bonddim/azure-alerts-proxy/internal/slack"
 	"github.com/bonddim/azure-alerts-proxy/internal/state"
 )
@@ -27,6 +28,7 @@ type Store interface {
 type Deps struct {
 	Notifier       slack.Notifier
 	Store          Store
+	ChannelRoutes  []config.ChannelRoute
 	DefaultChannel string
 	PortalBase     string
 	Logf           func(string, ...any)
@@ -58,10 +60,7 @@ func HandleAlert(ctx context.Context, payload []byte, d Deps) Result {
 	}
 
 	model := alert.ParseAlert(schema, alert.Options{PortalBase: d.PortalBase})
-	channel := d.DefaultChannel
-	if c := model.CustomProperties[channelProperty]; c != "" {
-		channel = c
-	}
+	channel := routeChannel(model, d.DefaultChannel, d.ChannelRoutes)
 	msg := slack.Build(model)
 	if storeDisabled(d.Store) {
 		if _, err := d.Notifier.Post(ctx, channel, msg); err != nil {
@@ -131,6 +130,42 @@ func HandleAlert(ctx context.Context, payload []byte, d Deps) Result {
 	})
 	d.logf("posted fired message for alert %s in %s", model.Key, posted.Channel)
 	return Result{Status: 200, Body: "posted"}
+}
+
+func routeChannel(model alert.Model, defaultChannel string, routes []config.ChannelRoute) string {
+	if c := model.CustomProperties[channelProperty]; c != "" {
+		return c
+	}
+	labels := labelMap(model.Labels)
+	for _, route := range routes {
+		if route.Service != "" && route.Service != model.MonitoringService {
+			continue
+		}
+		if !labelsMatch(labels, route.Labels) {
+			continue
+		}
+		if route.Channel != "" {
+			return route.Channel
+		}
+	}
+	return defaultChannel
+}
+
+func labelMap(labels []alert.Field) map[string]string {
+	m := make(map[string]string, len(labels))
+	for _, label := range labels {
+		m[label.Label] = label.Value
+	}
+	return m
+}
+
+func labelsMatch(labels map[string]string, want map[string]string) bool {
+	for name, value := range want {
+		if labels[name] != value {
+			return false
+		}
+	}
+	return true
 }
 
 func storeDisabled(store Store) bool {
