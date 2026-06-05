@@ -5,6 +5,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/bonddim/azure-alerts-proxy/internal/config"
 	"github.com/bonddim/azure-alerts-proxy/internal/fixtures"
 	"github.com/bonddim/azure-alerts-proxy/internal/handler"
 	"github.com/bonddim/azure-alerts-proxy/internal/slack"
@@ -94,6 +95,71 @@ func TestDefaultChannelFallback(t *testing.T) {
 	}
 }
 
+func TestRoutesPrometheusByNamespaceLabel(t *testing.T) {
+	n, _, deps := newDeps()
+	deps.ChannelRoutes = []config.ChannelRoute{
+		{Service: "Prometheus", Labels: map[string]string{"namespace": "payments"}, Channel: "#payments-alerts"},
+	}
+	res := handler.HandleAlert(context.Background(), []byte(fixtures.PrometheusFired), deps)
+	if res.Status != 200 {
+		t.Fatalf("status = %d", res.Status)
+	}
+	if n.posts[0].channel != "#payments-alerts" {
+		t.Errorf("channel = %q, want #payments-alerts", n.posts[0].channel)
+	}
+}
+
+func TestRoutesPrometheusQAAndProductionNamespaces(t *testing.T) {
+	n, _, deps := newDeps()
+	deps.Store = nil
+	deps.ChannelRoutes = []config.ChannelRoute{
+		{Service: "Prometheus", Labels: map[string]string{"namespace": "production"}, Channel: "#prod-alerts"},
+		{Service: "Prometheus", Labels: map[string]string{"namespace": "qa"}, Channel: "#qa-alerts"},
+	}
+	prod := strings.Replace(fixtures.PrometheusFired, `"namespace": "payments"`, `"namespace": "production"`, 1)
+	qa := strings.Replace(fixtures.PrometheusFired, `"namespace": "payments"`, `"namespace": "qa"`, 1)
+	handler.HandleAlert(context.Background(), []byte(prod), deps)
+	handler.HandleAlert(context.Background(), []byte(qa), deps)
+	if len(n.posts) != 2 {
+		t.Fatalf("posts = %d, want 2", len(n.posts))
+	}
+	if n.posts[0].channel != "#prod-alerts" {
+		t.Errorf("prod channel = %q", n.posts[0].channel)
+	}
+	if n.posts[1].channel != "#qa-alerts" {
+		t.Errorf("qa channel = %q", n.posts[1].channel)
+	}
+}
+
+func TestUnmatchedChannelRouteFallsBackToDefault(t *testing.T) {
+	n, _, deps := newDeps()
+	deps.ChannelRoutes = []config.ChannelRoute{
+		{Service: "Prometheus", Labels: map[string]string{"namespace": "production"}, Channel: "#prod-alerts"},
+	}
+	res := handler.HandleAlert(context.Background(), []byte(fixtures.PrometheusFired), deps)
+	if res.Status != 200 {
+		t.Fatalf("status = %d", res.Status)
+	}
+	if n.posts[0].channel != "#default" {
+		t.Errorf("channel = %q, want #default", n.posts[0].channel)
+	}
+}
+
+func TestCustomPropertyOverridesChannelRoute(t *testing.T) {
+	n, _, deps := newDeps()
+	deps.ChannelRoutes = []config.ChannelRoute{
+		{Service: "Platform", Labels: map[string]string{"namespace": "production"}, Channel: "#prod-alerts"},
+		{Channel: "#catch-all"},
+	}
+	res := handler.HandleAlert(context.Background(), []byte(fixtures.MetricStaticFired), deps)
+	if res.Status != 200 {
+		t.Fatalf("status = %d", res.Status)
+	}
+	if n.posts[0].channel != "#prod-incidents" {
+		t.Errorf("channel = %q, want custom property channel", n.posts[0].channel)
+	}
+}
+
 func TestNoStatePostsEveryFiredAlert(t *testing.T) {
 	n, _, deps := newDeps()
 	deps.Store = nil
@@ -153,6 +219,31 @@ func TestResolveUpdatesInPlace(t *testing.T) {
 	}
 	if !strings.Contains(n.updates[0].msg.Fallback, "Resolved:") {
 		t.Errorf("update fallback = %q", n.updates[0].msg.Fallback)
+	}
+}
+
+func TestResolvedAlertUpdatesStoredChannelDespiteRouteChange(t *testing.T) {
+	n, s, deps := newDeps()
+	deps.ChannelRoutes = []config.ChannelRoute{
+		{Service: "Prometheus", Labels: map[string]string{"namespace": "payments"}, Channel: "#payments-alerts"},
+	}
+	handler.HandleAlert(context.Background(), []byte(fixtures.PrometheusFired), deps)
+	deps.ChannelRoutes = []config.ChannelRoute{
+		{Service: "Prometheus", Labels: map[string]string{"namespace": "payments"}, Channel: "#new-payments-alerts"},
+	}
+	resolved := strings.Replace(fixtures.PrometheusFired, `"monitorCondition": "Fired"`, `"monitorCondition": "Resolved"`, 1)
+	res := handler.HandleAlert(context.Background(), []byte(resolved), deps)
+	if res.Status != 200 {
+		t.Fatalf("status = %d", res.Status)
+	}
+	if len(s.records) != 1 {
+		t.Fatalf("records = %d, want 1", len(s.records))
+	}
+	if len(n.updates) != 1 {
+		t.Fatalf("updates = %d, want 1", len(n.updates))
+	}
+	if n.updates[0].channel != "#payments-alerts" {
+		t.Errorf("update channel = %q, want stored channel", n.updates[0].channel)
 	}
 }
 

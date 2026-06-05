@@ -17,8 +17,55 @@ func clearEnv(t *testing.T) {
 		"AzureWebJobsStorage",
 		"STATE_RETENTION_DAYS",
 		"AZURE_PORTAL_BASE",
+		"SLACK_CHANNEL_ROUTES",
 	} {
 		t.Setenv(key, "")
+	}
+}
+
+func TestLoadAllowsMissingSlackChannelRoutes(t *testing.T) {
+	clearEnv(t)
+	t.Setenv("SLACK_BOT_TOKEN", "xoxb-test")
+	t.Setenv("SLACK_DEFAULT_CHANNEL", "#alerts")
+	cfg, err := config.Load()
+	if err != nil {
+		t.Fatalf("Load() error = %v", err)
+	}
+	if len(cfg.SlackChannelRoutes) != 0 {
+		t.Fatalf("SlackChannelRoutes length = %d, want 0", len(cfg.SlackChannelRoutes))
+	}
+}
+
+func TestLoadParsesSlackChannelRoutes(t *testing.T) {
+	clearEnv(t)
+	t.Setenv("SLACK_BOT_TOKEN", "xoxb-test")
+	t.Setenv("SLACK_DEFAULT_CHANNEL", "#alerts")
+	t.Setenv("SLACK_CHANNEL_ROUTES", `[
+		{"service":"Prometheus","labels":{"namespace":"production"},"channel":"#prod-alerts"},
+		{"service":"Prometheus","labels":{"namespace":"qa"},"channel":"C1234567890"}
+	]`)
+	cfg, err := config.Load()
+	if err != nil {
+		t.Fatalf("Load() error = %v", err)
+	}
+	if len(cfg.SlackChannelRoutes) != 2 {
+		t.Fatalf("SlackChannelRoutes length = %d, want 2", len(cfg.SlackChannelRoutes))
+	}
+	if got := cfg.SlackChannelRoutes[0].Labels["namespace"]; got != "production" {
+		t.Errorf("first namespace = %q", got)
+	}
+	if got := cfg.SlackChannelRoutes[1].Channel; got != "C1234567890" {
+		t.Errorf("second channel = %q", got)
+	}
+}
+
+func TestLoadRejectsInvalidSlackChannelRoutes(t *testing.T) {
+	clearEnv(t)
+	t.Setenv("SLACK_BOT_TOKEN", "xoxb-test")
+	t.Setenv("SLACK_DEFAULT_CHANNEL", "#alerts")
+	t.Setenv("SLACK_CHANNEL_ROUTES", `{`)
+	if _, err := config.Load(); err == nil {
+		t.Fatal("Load() error = nil, want invalid SLACK_CHANNEL_ROUTES error")
 	}
 }
 

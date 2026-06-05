@@ -30,7 +30,7 @@ flowchart LR
 - **Common Alert Schema** parsing for `Platform` (metric), log search, `Activity Log - *`, `ServiceHealth`, `ResourceHealth`, and `Prometheus`, plus a generic fallback.
 - Delivery adapter architecture; **Slack is currently the only supported target**.
 - Severity-coloured message (Sev4 grey -> Sev0/1 red; green when resolved), linked title, **markdown links** rendered, resource context, Prometheus labels table, and **Go to resource** / **Investigate with agent** buttons.
-- **Resolve-in-place** via optional Table Storage; when storage is omitted, every alert posts a new message. **Per-alert channel** is selected via the `slack-channel` custom property.
+- **Resolve-in-place** via optional Table Storage; when storage is omitted, every alert posts a new message. **Per-alert channel** is selected via the `slack-channel` custom property or `SLACK_CHANNEL_ROUTES`.
 - Bot token in **Key Vault**; managed identity for Key Vault + the state Table.
 
 ## Repository layout
@@ -51,7 +51,7 @@ flowchart LR
 Create an app from [`docs/slack-app-manifest.yml`](docs/slack-app-manifest.yml) at <https://api.slack.com/apps> -> **From a manifest**, install it, and copy the **Bot User OAuth Token** (`xoxb-...`). Scopes: `chat:write` + `chat:write.public`.
 
 ## 2. Deploy with Terraform
-The Terraform module is being split into a dedicated repository for Terraform Registry publishing. The expected registry source is `bonddim/alerts-proxy/azurerm`; the in-repo `terraform/` directory remains useful for development until that split is complete.
+The Terraform module is being split into a dedicated repository for Terraform Registry publishing.
 
 ```hcl
 module "monitor_slack" {
@@ -66,13 +66,14 @@ module "monitor_slack" {
   slack_default_channel = "#alerts"
 }
 ```
+
 ```bash
 TF_VAR_slack_bot_token='xoxb-...' terraform apply
 ```
-`terraform apply` is self-contained: it sets `WEBSITE_RUN_FROM_PACKAGE` to the public `package.zip`, restarts the app, and wires an Action Group to the function. During the transition, see [`terraform/README.md`](terraform/README.md) for module inputs/outputs. Attach the module's `action_group_id` to your alert rules.
 
 ## Docker
 The container listens on `8080` by default. Slack is the currently supported delivery target, so Slack settings are required:
+
 ```bash
 docker run --rm -p 8080:8080 \
   -e SLACK_BOT_TOKEN=xoxb-... \
@@ -86,6 +87,7 @@ Add `STATE_STORAGE_CONNECTION_STRING` or `STATE_STORAGE_ENDPOINT` to enable stat
 | --------------------------------- | -------------------- | --------------------------------------------------------------------------- |
 | `SLACK_BOT_TOKEN`                 | yes                  | Bot token (set by Terraform as a Key Vault reference)                       |
 | `SLACK_DEFAULT_CHANNEL`           | yes                  | Default channel when no `slack-channel` custom property is present          |
+| `SLACK_CHANNEL_ROUTES`            | no                   | JSON channel routing rules matched before falling back to the default       |
 | `STATE_TABLE_NAME`                | no (`alertmessages`) | Table name for alert -> message records                                     |
 | `STATE_STORAGE_ENDPOINT`          | no                   | Table endpoint (managed identity in Azure). Enables state when set.         |
 | `STATE_STORAGE_CONNECTION_STRING` | no                   | Connection string for local dev or non-Azure state. Enables state when set. |
@@ -93,6 +95,23 @@ Add `STATE_STORAGE_CONNECTION_STRING` or `STATE_STORAGE_ENDPOINT` to enable stat
 | `AZURE_PORTAL_BASE`               | no                   | Portal base URL for sovereign clouds                                        |
 
 If neither storage setting is present, the app still runs: fired and resolved notifications post new Slack messages, retries are not deduplicated, and cleanup is skipped. `AzureWebJobsStorage` is still used as a fallback for local Azure Functions state.
+
+Example `SLACK_CHANNEL_ROUTES` for Prometheus namespace routing:
+
+```json
+[
+  {
+    "service": "Prometheus",
+    "labels": { "namespace": "production" },
+    "channel": "#prod-alerts"
+  },
+  {
+    "service": "Prometheus",
+    "labels": { "namespace": "qa" },
+    "channel": "#qa-alerts"
+  }
+]
+```
 
 ## Releasing
 
